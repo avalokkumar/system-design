@@ -3,25 +3,25 @@
 ### Components:
 
 * #### Data Structures:
-Redis supports a wide range of data structures, including strings, lists, sets, hashes, and sorted sets. You will need to learn the basic concepts behind these data structures and how to use them in Redis.
+> Redis supports a wide range of data structures, including strings, lists, sets, hashes, and sorted sets. You will need to learn the basic concepts behind these data structures and how to use them in Redis.
 
 * #### Redis Commands: 
-Redis provides a comprehensive set of commands for manipulating data in its database. You will need to learn how to use these commands to perform various operations, such as adding and retrieving data.
+> Redis provides a comprehensive set of commands for manipulating data in its database. You will need to learn how to use these commands to perform various operations, such as adding and retrieving data.
 
 * #### Persistence: 
-Redis allows data to be persisted to disk, which means it can survive system failures and reboots. You will need to understand how to configure Redis to enable persistence and how to use it effectively.
+> Redis allows data to be persisted to disk, which means it can survive system failures and reboots. You will need to understand how to configure Redis to enable persistence and how to use it effectively.
 
 * #### Scaling: 
-Redis can be scaled horizontally and vertically to handle large amounts of data and high traffic loads. You will need to learn about Redis clustering and sharding to scale your Redis deployment.
+> Redis can be scaled horizontally and vertically to handle large amounts of data and high traffic loads. You will need to learn about Redis clustering and sharding to scale your Redis deployment.
 
 * #### Performance Optimization: 
-Redis is known for its high performance, but there are various techniques and best practices you can follow to optimize its performance further. You will need to learn about Redis tuning and benchmarking to optimize Redis for your use case.
+> Redis is known for its high performance, but there are various techniques and best practices you can follow to optimize its performance further. You will need to learn about Redis tuning and benchmarking to optimize Redis for your use case.
 
 * #### Advanced Features: 
-Redis provides several advanced features, such as pub/sub messaging, Lua scripting, and transactions. You will need to learn about these features and how to use them effectively.
+> Redis provides several advanced features, such as pub/sub messaging, Lua scripting, and transactions. You will need to learn about these features and how to use them effectively.
 
 * #### Integration: 
-Redis can be integrated with various programming languages, frameworks, and tools. You will need to learn how to use Redis with your preferred programming language and how to integrate it with other tools in your stack.
+> Redis can be integrated with various programming languages, frameworks, and tools. You will need to learn how to use Redis with your preferred programming language and how to integrate it with other tools in your stack.
 
 
 ---
