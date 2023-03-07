@@ -159,46 +159,91 @@ For example, let's say we receive 20 requests in the first second. Each request 
 ##### Token Bucket Algorithm in Java
 
 ```java
-public class TokenBucket {
-    private final int capacity;
-    private final double refillRate;
-    private double tokens;
-    private Instant lastRefillTime;
+import java.util.concurrent.atomic.AtomicLong;
 
-    public TokenBucket(int capacity, double refillRate) {
+public class TokenBucket {
+    // tokens - the number of tokens currently available
+    private final AtomicLong tokens;
+    // capacity - the maximum number of tokens that the bucket can hold
+    private final int capacity;
+    // refillTokens - the number of tokens added to the bucket on every refill
+    private final int refillTokens;
+    // refillPeriod - the time period in milliseconds between each refill
+    private final long refillPeriod;
+    // lastRefillTimestamp - the time when the last refill occurred
+    private long lastRefillTimestamp;
+
+    public TokenBucket(int capacity, int refillTokens, long refillPeriod) {
         this.capacity = capacity;
-        this.refillRate = refillRate;
-        this.tokens = capacity;
-        this.lastRefillTime = Instant.now();
+        this.tokens = new AtomicLong(capacity);
+        this.refillTokens = refillTokens;
+        this.refillPeriod = refillPeriod;
+        this.lastRefillTimestamp = System.currentTimeMillis();
     }
 
-    public synchronized boolean tryConsume(int tokensRequested) {
+    public synchronized boolean tryConsume() {
+        // Call the refill method to refill the bucket with tokens if needed
         refill();
-        if (tokens >= tokensRequested) {
-            tokens -= tokensRequested;
+        // Try to decrement the tokens in the bucket, if it succeeds then return true,
+        // else return false
+        long value = tokens.get();
+        if (value > 0) {
+            tokens.decrementAndGet();
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
 
     private void refill() {
-        Instant now = Instant.now();
-        double timeSinceLastRefill = Duration.between(lastRefillTime, now).toNanos() / 1_000_000_000.0;
-        double tokensToAdd = timeSinceLastRefill * refillRate;
-        tokens = Math.min(tokens + tokensToAdd, capacity);
-        lastRefillTime = now;
+        long now = System.currentTimeMillis();
+        // If refillPeriod time has passed since the last refill, then refill the bucket
+        if (now > lastRefillTimestamp + refillPeriod) {
+            // Calculate the amount of tokens that should be added to the bucket based on the time passed
+            //Break summary
+            /*
+                    1. (now - lastRefillTimestamp) calculates the elapsed time since the last refill in milliseconds.
+                    2. `refillPeriod` is the time interval between refills in milliseconds.
+                    3. Dividing the elapsed time by the refill period `(now - lastRefillTimestamp) / refillPeriod` gives the number of intervals that have passed since the last refill. For example, if the refill period is 1000ms and it has been 1500ms since the last refill, then `(now - lastRefillTimestamp) / refillPeriod` would be 1 (one interval has passed).
+                    4. Multiplying the number of intervals by the refill rate `((now - lastRefillTimestamp) / refillPeriod * refillTokens)` gives the number of tokens that should be added to the bucket to keep up with the refill rate. For example, if the refill rate is 2 tokens per second and one interval has passed since the last refill, then `((now - lastRefillTimestamp) / refillPeriod * refillTokens)` would be 2 (two tokens should be added to the bucket).
+             */
+            long refillAmount = (now - lastRefillTimestamp) / refillPeriod * refillTokens;
+            // Add the tokens to the bucket while making sure not to exceed the bucket's capacity
+            tokens.getAndUpdate(currentTokens -> Math.min(capacity, currentTokens + refillAmount));
+            // Update the last refill timestamp to the current time
+            lastRefillTimestamp = now;
+        }
+    }
+}
+
+public class TokenBucketCaller {
+    public static void main(String[] args) {
+        // Create a new TokenBucket object with a capacity of 10, a refill rate of 2 tokens per second, and
+        // a refill period of 1 second
+        TokenBucket bucket = new TokenBucket(10, 2, 1000);
+        // Try to consume tokens from the bucket for 20 requests
+        for (int i = 0; i < 20; i++) {
+            // If there are tokens available in the bucket, consume them and print that the request was processed
+            // Otherwise, print that the request was rejected
+            if (bucket.tryConsume()) {
+                System.out.println("Request " + i + " processed");
+            } else {
+                System.out.println("Request " + i + " rejected");
+            }
+            // Wait for 500 milliseconds before trying to consume tokens again
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
 ```
+> In above implementation, `TokenBucket` class represents the rate limiter, which has a `capacity` (capacity) representing the maximum number of tokens that can be stored in the bucket, a `refillTokens` parameter indicating the number of tokens to be refilled per `refillPeriod` milliseconds, and an `AtomicLong` variable tokens that holds the number of tokens currently available in the bucket.
 
-> This implementation defines a `TokenBucket` class with a capacity representing the maximum number of tokens that the bucket can hold and a refillRate representing the rate at which tokens are added to the bucket. The tokens field keeps track of the current number of tokens in the bucket, and the lastRefillTime field keeps track of the last time the bucket was refilled.
+> The `tryConsume` method tries to consume a token from the bucket, returning `true` if successful and `false` otherwise. The refill method refills the bucket with tokens if `refillPeriod` milliseconds have passed since the last refill.
 
-> The `tryConsume` method attempts to consume a certain number of tokens. It first calls the refill method to refill the bucket with any tokens that have been added since the last refill. If there are enough tokens in the bucket to satisfy the request, the method subtracts the requested number of tokens from the bucket and returns true. Otherwise, the method returns false.
-
-> The `refill` method calculates the time since the last refill and adds tokens to the bucket at a rate determined by the `refillRate`. The number of tokens added is capped at the capacity of the bucket to prevent it from overflowing.
-
-> You can use this class to implement rate limiting in your application by creating a `TokenBucket` instance with your desired `capacity` and `refillRate`, and calling the `tryConsume` method before processing each request. If the method returns false, you can reject the request or delay it until more tokens become available.
+> In the `TokenBucketCaller` class, an instance of the `TokenBucket` class is created with a capacity of 10, a refill rate of 2 tokens per second, and a refill period of 1 second. The `tryConsume` method is called repeatedly to simulate requests being processed. If a request is processed successfully, a message is printed indicating that the request has been processed, and if it is rejected, a message is printed indicating that the request has been rejected. The thread is then paused for 500 milliseconds before the next request is processed.
 
 ---
 ### Leaky Bucket Algorithm
@@ -222,43 +267,55 @@ Here's how the Leaky Bucket Algorithm works in more detail:
 
 ```java
 public class LeakyBucket {
-    private long maxBucketSize;
-    private long currentBucketSize;
-    private long lastLeakTime;
-    private double leakRate;
+    private int capacity; // maximum number of tokens the bucket can hold
+    private int leakRate; // number of tokens leaked per second
+    private int availableTokens; // current number of tokens available in the bucket
+    private long lastLeakTimestamp; // timestamp of the last time the bucket was leaked
 
-    public LeakyBucket(long maxBucketSize, double leakRate) {
-        this.maxBucketSize = maxBucketSize;
-        this.currentBucketSize = 0;
-        this.lastLeakTime = System.currentTimeMillis();
+    public LeakyBucket(int capacity, int leakRate) {
+        this.capacity = capacity;
         this.leakRate = leakRate;
+        this.availableTokens = 0; // initially the bucket is empty
+        this.lastLeakTimestamp = System.currentTimeMillis();
     }
 
-    public synchronized boolean tryConsume(long numTokens) {
-        leak();
-        if (currentBucketSize + numTokens > maxBucketSize) {
-            return false;
-        } else {
-            currentBucketSize += numTokens;
-            return true;
+    public synchronized boolean tryConsume() {
+        leak(); // first leak the bucket
+        if (availableTokens > 0) { // if there are tokens available in the bucket
+            availableTokens--; // consume one token
+            return true; // return success
         }
+        return false; // otherwise return failure
     }
 
     private void leak() {
         long now = System.currentTimeMillis();
-        double tokensToLeak = (now - lastLeakTime) * leakRate / 1000;
-        currentBucketSize = Math.max(0, currentBucketSize - (long)tokensToLeak);
-        lastLeakTime = now;
+        long timeElapsed = now - lastLeakTimestamp; // calculate the time elapsed since the last leak
+        int tokensToLeak = (int) (timeElapsed * leakRate / 1000); // calculate the number of tokens to be leaked
+        if (tokensToLeak > 0) { // if there are tokens to be leaked
+            availableTokens = Math.max(0, availableTokens - tokensToLeak); // leak the tokens
+            lastLeakTimestamp = now; // update the timestamp of the last leak
+        }
+    }
+
+    public static void main(String[] args) {
+        LeakyBucket bucket = new LeakyBucket(10, 2); // create a bucket with capacity of 10 and leak rate of 2 tokens per second
+        for (int i = 0; i < 20; i++) {
+            if (bucket.tryConsume()) {
+                System.out.println("Request " + i + " processed"); // if token is available, process the request
+            } else {
+                System.out.println("Request " + i + " rejected"); // otherwise reject the request
+            }
+            try {
+                Thread.sleep(500); // wait for 500 milliseconds
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
 ```
 
-* `LeakyBucket(long maxBucketSize, double leakRate)`: This is the constructor of the class which takes in two parameters - maxBucketSize which is the maximum size of the bucket and leakRate which is the rate at which the bucket leaks tokens.
-* `tryConsume(long numTokens)`: This method is used to check if a given number of tokens can be consumed from the bucket. It takes in one parameter - numTokens which is the number of tokens to be consumed. If the bucket has enough tokens to fulfill the request, it returns true and reduces the current size of the bucket by numTokens. Otherwise, it returns false.
-* `leak()`: This method is called internally by the tryConsume method to leak tokens from the bucket. It calculates the time since the last leak and the number of tokens to be leaked based on the leak rate. It then updates the current size of the bucket by subtracting the leaked tokens.
-The LeakyBucket class uses a synchronized block to ensure thread-safety while updating the current size of the bucket. The System.currentTimeMillis() method is used to calculate the time since the last leak or refill, and the Math.max and Math.min methods are used to ensure that the current size of the bucket does not exceed the maximum size or go below zero.
-
----
 ### Sliding Window Algorithm
 
 The Sliding Window Algorithm is another technique used for rate limiting. It is based on dividing time into small intervals or windows and counting the number of requests made during each interval. The sliding window refers to the continuous shift of the window over time. Here are the details of how the algorithm works:
@@ -305,60 +362,83 @@ Suppose we receive 8 requests in the second second. We increment the counter for
 
 > If we receive more than 10 requests in any second, we reject or delay the excess requests. If we receive requests that span across multiple windows, we count them in each window. If we receive requests that arrive at the same time, we can use a random or round-robin algorithm to distribute them across the windows.
 
-###### The Sliding Window Algorithm is a simple and effective technique for rate limiting. It can handle both short-term and long-term bursts of requests, and it can adapt to changing traffic patterns. However, it may require more memory to store the counters for each window, and it may not be suitable for low-latency applications where delays are not acceptable.
+#### Sliding window rate limiter implementation to handle a huge number of requests in the millions:
 
-#### Sliding Window Algorithm in Java:
+* Increase the size of the sliding window: The size of the sliding window can be increased to accommodate the larger number of requests. This will allow for a larger number of requests to be processed within a given time frame.
+
+* Use a distributed cache: To handle a large number of requests, it may be necessary to use a distributed cache to store the sliding window state. This will allow for the sliding window to be shared across multiple servers, reducing the load on any one server.
+
+* Implement request batching: Rather than processing each request individually, requests can be batched together and processed in bulk. This will reduce the overhead of processing individual requests and allow for more efficient use of resources.
+
+* Use asynchronous processing: To handle a large number of requests, it may be necessary to use asynchronous processing to allow requests to be processed in the background. This will allow for more efficient use of resources and reduce the response time for individual requests.
+
+> Here's an example implementation of a sliding window rate limiter with these changes:
 
 ```java
-import java.util.LinkedList;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 
 public class SlidingWindowRateLimiter {
-    private final LinkedList<Long> requests;
-    private final int windowSize;
-    private final int maxRequests;
-    private final long timeUnit;
-    private final long timeUnitInMillis;
+    
+    private final int windowSizeInSeconds;
+    private final int maxRequestsPerWindow;
+    private final Map<String, Window> windows = new HashMap<>();
 
-    public SlidingWindowRateLimiter(int windowSize, int maxRequests, long timeUnit) {
-        this.requests = new LinkedList<>();
-        this.windowSize = windowSize;
-        this.maxRequests = maxRequests;
-        this.timeUnit = timeUnit;
-        this.timeUnitInMillis = timeUnit * 1000;
+    public SlidingWindowRateLimiter(int windowSizeInSeconds, int maxRequestsPerWindow) {
+        this.windowSizeInSeconds = windowSizeInSeconds;
+        this.maxRequestsPerWindow = maxRequestsPerWindow;
     }
 
-    public synchronized boolean allowRequest() {
-        long currentTime = System.currentTimeMillis();
-        long startTime = currentTime - (windowSize * timeUnitInMillis);
-
-        if (requests.isEmpty() || requests.getLast() < startTime) {
-            requests.addLast(currentTime);
+    public synchronized boolean allowRequest(String key) {
+        Instant now = Instant.now();
+        Window window = windows.get(key);
+        if (window == null || window.start.plusSeconds(windowSizeInSeconds).isBefore(now)) {
+            window = new Window(now, 1);
+            windows.put(key, window);
             return true;
-        }
-
-        if (requests.size() < maxRequests) {
-            requests.addLast(currentTime);
+        } else if (window.count < maxRequestsPerWindow) {
+            window.count++;
             return true;
-        }
-
-        long oldestRequestTime = requests.getFirst();
-        if (oldestRequestTime >= startTime) {
+        } else {
             return false;
         }
+    }
 
-        requests.removeFirst();
-        requests.addLast(currentTime);
+    private static class Window {
+        private final Instant start;
+        private int count;
 
-        return true;
+        public Window(Instant start, int count) {
+            this.start = start;
+            this.count = count;
+        }
     }
 }
 ```
 
-In this implementation, we use a LinkedList to keep track of the request timestamps within the sliding window. The windowSize parameter specifies the size of the sliding window in seconds, while the `maxRequests` parameter specifies the maximum number of requests allowed within that window. The timeUnit parameter specifies the time unit used for the window size (e.g. seconds, minutes, etc.).
+> Here's an example main method that demonstrates how to use this rate limiter:
 
-The `allowRequest()` method checks if a request is allowed based on the sliding window. If the list of requests is empty or the last request occurred before the start of the current sliding window, the request is allowed and its timestamp is added to the list. If the list has not reached the maximum number of requests, the request is allowed and its timestamp is added to the list. Otherwise, if the first request in the list occurred before the start of the current sliding window, that request is removed and the new request is allowed and its timestamp is added to the list. If the first request in the list occurred within the current sliding window, the new request is not allowed.
+```java
+public static void main(String[] args) {
+    int windowSizeInSeconds = 60;
+    int maxRequestsPerWindow = 100;
+    SlidingWindowRateLimiter rateLimiter = new SlidingWindowRateLimiter(windowSizeInSeconds, maxRequestsPerWindow);
 
-This implementation is thread-safe, as we synchronize the `allowRequest()` method to prevent race conditions between multiple threads accessing the same rate limiter instance.
+    // Allow up to 100 requests per minute for each user
+    for (int i = 0; i < 1000; i++) {
+        boolean allowed = rateLimiter.allowRequest("user123");
+        System.out.println("Request " + i + " allowed: " + allowed);
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            // Ignore
+        }
+    }
+}
+```
+
+###### The Sliding Window Algorithm is a simple and effective technique for rate limiting. It can handle both short-term and long-term bursts of requests, and it can adapt to changing traffic patterns. However, it may require more memory to store the counters for each window, and it may not be suitable for low-latency applications where delays are not acceptable.
 
 ---
 ### Adaptive Rate Limiting Algorithm
@@ -423,3 +503,23 @@ public class AdaptiveRateLimiter {
 In this example, we define a sliding window of fixed size MAX_WINDOW_SIZE to track the incoming requests. The requestTimes array is used to store the timestamps of the incoming requests. We also define a target latency TARGET_LATENCY in nanoseconds and a decay factor DECAY_FACTOR in nanoseconds.
 
 The `allowRequest` method is called for each incoming request. It first calculates the elapsed time since the oldest request in the window and the rate of incoming requests. Then, it calculates the current latency of the system and adjusts the window size based on the latency. If the latency is below the target latency, the window size is increased, and if the latency is above the target latency, the window size is decreased. Finally, the current request timestamp is stored in the `requestTimes` array, and the method returns `true` or `false` based on whether the request should be allowed or not, using a random probability based on the current rate.
+
+
+### Data Sharding and Caching
+
+> ###### Data sharding involves partitioning the rate limiter's data across multiple machines or nodes to distribute the load and increase its capacity. This means that instead of having all the rate limiter data stored in a single database, the data is divided into smaller pieces and stored on multiple servers. Each server is responsible for handling a subset of the data, which allows the rate limiter to handle more requests simultaneously.
+
+> ###### Caching can be used to store frequently accessed rate limiting data in memory to reduce the load on the database and improve the response time of the system. By caching the frequently accessed data, the rate limiter can quickly check if a user has exceeded their limit without having to query the database every time. This can significantly reduce the response time of the rate limiter and improve the overall performance of the system.
+
+
+### Rate limit by IP or by user
+
+Rate limiting can be done by either IP or by user, depending on the specific requirements of the system.
+
+* When rate limiting by IP, the system tracks the number of requests made by a particular IP address over a certain period of time, and if the number of requests exceeds a predefined limit, further requests from that IP are blocked for a period of time.
+
+* On the other hand, when rate limiting by user, the system tracks the number of requests made by a particular user account over a certain period of time, and if the number of requests exceeds a predefined limit, further requests from that user are blocked for a period of time.
+
+* Rate limiting by IP can be effective in preventing abuse from individual users who are making a large number of requests from a single IP address, such as through the use of automated scripts or bots. However, it may not be effective in preventing abuse from a large number of users who are making a smaller number of requests each, as each IP address may represent multiple users.
+
+* Rate limiting by user can be effective in preventing abuse from individual users who are making a large number of requests from a single user account, but it may be more complex to implement and may require additional infrastructure to track user accounts and their activity.
